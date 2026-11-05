@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { DigitalTwinState, TelemetryData, Incident, DataSourceMode } from './types';
-import { api } from './services/api';
+import { api, subscribeLocalTwin } from './services/api';
+import { DEFAULT_INITIAL_TWIN } from './services/defaultState';
 import { socket } from './services/socket';
 import { Header } from './components/Header';
 import { VehicleTwinView } from './components/twin/VehicleTwinView';
@@ -14,28 +15,40 @@ import { IncidentHistoryModal } from './components/history/IncidentHistoryModal'
 import { HardwareSimulatorModal } from './components/hardware/HardwareSimulatorModal';
 
 export const App: React.FC = () => {
-  const [twin, setTwin] = useState<DigitalTwinState | null>(null);
-  const [telemetry, setTelemetry] = useState<TelemetryData | null>(null);
+  const [twin, setTwin] = useState<DigitalTwinState>(DEFAULT_INITIAL_TWIN);
+  const [telemetry, setTelemetry] = useState<TelemetryData | null>(DEFAULT_INITIAL_TWIN.latestTelemetry);
   const [activeIncident, setActiveIncident] = useState<Incident | null>(null);
   const [sourceMode, setSourceMode] = useState<DataSourceMode>('simulation');
   const [isConnected, setIsConnected] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isHardwareModalOpen, setIsHardwareModalOpen] = useState(false);
 
-  // Initial load
+  // Subscribe to local reactive state updates
+  useEffect(() => {
+    return subscribeLocalTwin((updated) => {
+      setTwin({ ...updated });
+      if (updated.latestTelemetry) {
+        setTelemetry({ ...updated.latestTelemetry });
+      }
+    });
+  }, []);
+
+  // Initial load from backend if available
   useEffect(() => {
     api.getTwinState('VEH-ERS-01')
       .then((state) => {
-        setTwin(state);
-        setSourceMode(state.dataSourceMode);
-        if (state.latestTelemetry) {
-          setTelemetry(state.latestTelemetry);
-        }
-        if (state.activeIncidentId) {
-          api.getIncident(state.activeIncidentId).then(setActiveIncident).catch(() => {});
+        if (state) {
+          setTwin(state);
+          setSourceMode(state.dataSourceMode);
+          if (state.latestTelemetry) {
+            setTelemetry(state.latestTelemetry);
+          }
+          if (state.activeIncidentId) {
+            api.getIncident(state.activeIncidentId).then(setActiveIncident).catch(() => {});
+          }
         }
       })
-      .catch((err) => console.error('Failed to load initial twin state:', err));
+      .catch(() => {});
   }, []);
 
   // WebSocket listeners
@@ -99,15 +112,6 @@ export const App: React.FC = () => {
     }, 1200);
     return () => clearInterval(interval);
   }, [isConnected]);
-
-  if (!twin) {
-    return (
-      <div className="min-h-screen bg-[#07090e] flex flex-col items-center justify-center text-slate-400">
-        <div className="w-10 h-10 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="text-sm font-medium tracking-wide">Connecting to ERS Digital Twin Core...</p>
-      </div>
-    );
-  }
 
   const speed = telemetry?.speedKph ?? (twin.status === 'driving' ? 65 : 0);
   const accelerationG = telemetry?.accelerationG ?? 1.0;

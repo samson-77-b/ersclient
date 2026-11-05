@@ -24,3 +24,4 @@ This repository is pre-configured for instant zero-configuration deployment to [
 - Framework Preset: **Vite**
 - Build Command: `npm run build`
 - Output Directory: `dist`
+
